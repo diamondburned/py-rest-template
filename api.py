@@ -1,15 +1,10 @@
-from fastapi import Depends, APIRouter, HTTPException, Header
+from fastapi import Depends, APIRouter, HTTPException
 from sqlmodel import select
 from pydantic import BaseModel
-from sessions import (
-    authorize,
-    hash_password,
-    verify_password,
-    generate_token,
-    new_session,
-)
+from sessions import authorize, hash_password, verify_password, new_session
 from db.models import *
-from db import Database, use_db
+from db import Database
+import db
 
 router = APIRouter(
     prefix="/api",
@@ -17,12 +12,21 @@ router = APIRouter(
 )
 
 
+class UserResponse(BaseModel):
+    username: str
+    display_name: str | None
+
+
 @router.get("/users/me")
-async def get_self(user: User = Depends(authorize)) -> User:
+async def get_self(
+    username: str = Depends(authorize),
+    db: Database = Depends(db.use),
+) -> UserResponse:
     """
     This function returns the currently authenticated user.
     """
-    return user
+    user = (await db.exec(select(User).where(User.username == username))).one()
+    return UserResponse(**user.model_dump())
 
 
 class LoginRequest(BaseModel):
@@ -33,7 +37,7 @@ class LoginRequest(BaseModel):
 @router.post("/login")
 async def login(
     req: LoginRequest,
-    db: Database = Depends(use_db),
+    db: Database = Depends(db.use),
 ) -> Session:
     """
     This function logs in a user and returns a session token.
@@ -41,9 +45,7 @@ async def login(
     user = (await db.exec(select(User).where(User.username == req.username))).first()
     if user is None or not verify_password(req.password, user.passhash):
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    session = await new_session(db, user)
-    return session
+    return new_session(db, user.username)
 
 
 class RegisterRequest(BaseModel):
@@ -54,7 +56,7 @@ class RegisterRequest(BaseModel):
 @router.post("/register")
 async def register(
     req: RegisterRequest,
-    db: Database = Depends(use_db),
+    db: Database = Depends(db.use),
 ) -> Session:
     """
     This function registers a new user and returns a session token.
@@ -64,8 +66,4 @@ async def register(
         passhash=hash_password(req.password),
     )
     db.add(user)
-
-    await db.commit()
-
-    session = await new_session(db, user)
-    return session
+    return new_session(db, user.username)

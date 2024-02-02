@@ -1,12 +1,13 @@
 from typing import AsyncGenerator
 from fastapi import HTTPException, Header, Depends
-from db import Database, use_db
+from db import Database
 from db.models import User, Session
 from sqlmodel import select, update
 from datetime import datetime, timedelta
 import secrets
 import hashlib
 import hmac
+import db
 
 
 SESSION_EXPIRY = timedelta(days=7)
@@ -15,11 +16,11 @@ SESSION_RENEW_AFTER = timedelta(days=1)
 
 async def authorize(
     authorization: str = Header(),
-    db: Database = Depends(use_db),
-) -> AsyncGenerator[User, None]:
+    db: Database = Depends(db.use),
+) -> AsyncGenerator[str, None]:
     """
-    This function asserts the authorization header and returns the user if the
-    token is valid.
+    This function asserts the authorization header and returns the username if
+    the token is valid.
     """
 
     if not authorization.startswith("Bearer "):
@@ -41,26 +42,25 @@ async def authorize(
     # Don't always renew the session, as that would force a database write on
     # every request.
     if (session.expires_at - SESSION_EXPIRY) + SESSION_RENEW_AFTER < now:
-        session.expires_at = datetime.now() + SESSION_EXPIRY
-        db.add(session)
-        await db.commit()
+        async with db.begin_nested():
+            session.expires_at = datetime.now() + SESSION_EXPIRY
+            db.add(session)
+            await db.commit()
 
-    yield session.user
+    yield session.username
 
 
-async def new_session(db: Database, user: User) -> Session:
+def new_session(db: Database, username: str) -> Session:
     """
     This function creates a new session for a user and adds it to the database.
     The session is returned.
     """
     session = Session(
         token=generate_token(),
-        user=user,
-        username=user.username,
+        username=username,
         expires_at=datetime.now() + SESSION_EXPIRY,
     )
     db.add(session)
-    await db.commit()
     return session
 
 

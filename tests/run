@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+./main.py --database ":memory:" &
+while ! nc -z localhost 5765 &> /dev/null; do
+  sleep 0.1
+done
+
+echo
+echo "===== Running tests  ====="
+echo
+
+hurl --error-format=long --test tests/*.hurl || true
+
+echo
+echo "===== Tests finished ====="
+echo
+
+pkill -INT -P $$
+wait
