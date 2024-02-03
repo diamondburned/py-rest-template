@@ -6,7 +6,7 @@ authors = ["diamondburned <diamond@arikawa-hi.me>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10,<4"
 aiosqlite = "0.19.0"
 annotated-types = "0.6.0"
 anyio = "4.2.0"
