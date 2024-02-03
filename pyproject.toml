@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "py-rest-template"
+name = "main"
 version = "0.1.0"
 description = ""
 authors = ["diamondburned <diamond@arikawa-hi.me>"]

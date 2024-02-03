@@ -25,10 +25,9 @@
 				packages.default = mkPoetryApplication {
 					projectDir = self;
 				};
+
 				devShell = pkgs.mkShell {
-					inputsFrom = [
-						self.packages.${system}.default
-					];
+					inputsFrom = [ self.packages.${system}.default ];
 
 					packages = with pkgs; [
 						poetry
