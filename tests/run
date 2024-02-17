@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-./main.py --database ":memory:" &
-while ! nc -z localhost 5765 &> /dev/null; do
+./main.py --port 5765 --database ":memory:" &
+while ! curl -s -o /dev/null -w "%{http_code}" http://localhost:5765 &> /dev/null; do
   sleep 0.1
 done
 

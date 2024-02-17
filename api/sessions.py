@@ -1,8 +1,10 @@
 from typing import AsyncGenerator
-from fastapi import HTTPException, Header, Depends
+from fastapi import HTTPException, APIRouter, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
 from db import Database
-from db.models import User, Session
-from sqlmodel import select, update
+from db.models import *
+from sqlmodel import select
 from datetime import datetime, timedelta
 import secrets
 import hashlib
@@ -14,19 +16,64 @@ SESSION_EXPIRY = timedelta(days=7)
 SESSION_RENEW_AFTER = timedelta(days=1)
 
 
-async def authorize(
-    authorization: str = Header(),
+router = APIRouter(tags=["sessions"])
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/login")
+async def login(
+    req: LoginRequest,
     db: Database = Depends(db.use),
-) -> AsyncGenerator[str, None]:
+) -> Session:
     """
-    This function asserts the authorization header and returns the username if
+    This function logs in a user and returns a session token.
+    """
+    user = (await db.exec(select(User).where(User.email == req.email))).first()
+    if user is None or not verify_password(req.password, user.passhash):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return new_session(db, user.id)
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/register")
+async def register(
+    req: RegisterRequest,
+    db: Database = Depends(db.use),
+) -> Session:
+    """
+    This function registers a new user and returns a session token.
+    """
+    user = User(
+        email=req.email,
+        passhash=hash_password(req.password),
+    )
+    db.add(user)
+
+    await db.commit()
+    await db.refresh(user)
+
+    return new_session(db, user.id)
+
+
+async def authorize(
+    creds: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Database = Depends(db.use),
+) -> AsyncGenerator[int, None]:
+    """
+    This function asserts the authorization header and returns the user ID if
     the token is valid.
     """
 
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Only Bearer token is supported")
-    authorization = authorization[7:]
-
+    authorization = creds.credentials
     now = datetime.now()
 
     session_query = await db.exec(
@@ -47,17 +94,18 @@ async def authorize(
             db.add(session)
             await db.commit()
 
-    yield session.username
+    assert session.user_id is not None
+    yield session.user_id
 
 
-def new_session(db: Database, username: str) -> Session:
+def new_session(db: Database, user_id: int) -> Session:
     """
     This function creates a new session for a user and adds it to the database.
     The session is returned.
     """
     session = Session(
         token=generate_token(),
-        username=username,
+        user_id=user_id,
         expires_at=datetime.now() + SESSION_EXPIRY,
     )
     db.add(session)
